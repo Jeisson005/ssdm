@@ -1,0 +1,36 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./sql:/app/sql
+      - ./scripts:/app/scripts:ro
+      - ./temp:/app/temp
+      - ./.git:/app/.git:ro
+    profiles:
+      - tools
+
+  ssh-tunnel:
+    image: alpine:3.20
+    profiles:
+      - tunnel
+    user: "0:0"
+    volumes:
+      - ${SSH_KEY_PATH}:/ssh/id_rsa:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+          set -e
+          apk add --no-cache openssh-client
+          ssh -N \
+            -o StrictHostKeyChecking=no \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            -i /ssh/id_rsa \
+            -L 0.0.0.0:${SSH_LOCAL_PORT:-15433}:${SSH_REMOTE_HOST}:${SSH_REMOTE_PORT:-1433} \
+            ${SSH_USER}@${SSH_HOST} \
+            -p ${SSH_PORT:-22}

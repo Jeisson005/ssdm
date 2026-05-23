@@ -1,0 +1,5 @@
+.env
+.opencode/
+!sql/.gitkeep
+temp/*
+!temp/.gitkeep
