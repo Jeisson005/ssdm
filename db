@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -e
+
+# Default settings
+ENV_NAME=""
+ENV_FILE=""
+ACTION_ARGS=()
+
+# Parse flags like -e <env>, --env <env>, or --env=<env>
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -e|--env)
+      if [[ -z "$2" || "$2" == -* ]]; then
+        echo "Error: Missing value for $1 flag." >&2
+        exit 1
+      fi
+      ENV_NAME="$2"
+      shift 2
+      ;;
+    --env=*)
+      ENV_NAME="${1#*=}"
+      shift
+      ;;
+    *)
+      ACTION_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Resolve environment file
+if [[ -n "$ENV_NAME" ]]; then
+  if [[ -f ".env.${ENV_NAME}" ]]; then
+    ENV_FILE=".env.${ENV_NAME}"
+  elif [[ -f "${ENV_NAME}" ]]; then
+    ENV_FILE="${ENV_NAME}"
+  else
+    echo "Error: Environment file not found for '${ENV_NAME}'." >&2
+    echo "Looked for: .env.${ENV_NAME} and ${ENV_NAME}" >&2
+    exit 1
+  fi
+else
+  ENV_FILE="${ENV_FILE:-.env}"
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Error: Environment file '$ENV_FILE' not found." >&2
+  echo "Create '$ENV_FILE' from .env.example or specify an environment with: ./db --env <name>" >&2
+  exit 1
+fi
+
+export ENV_FILE
+
+# Extract DB name from env file for helpful status display (if present)
+DB_NAME=$(grep -E '^SQL_DATABASE=' "$ENV_FILE" | cut -d '=' -f2- | tr -d '\r"' || true)
+if [[ -n "$DB_NAME" ]]; then
+  echo -e "\033[1;34m[SSDM]\033[0m Target: \033[1;32m$ENV_FILE\033[0m (DB: \033[1;36m$DB_NAME\033[0m)"
+else
+  echo -e "\033[1;34m[SSDM]\033[0m Target: \033[1;32m$ENV_FILE\033[0m"
+fi
+
+# Tunnel convenience subcommands
+if [[ "${ACTION_ARGS[0]}" == "tunnel" || "${ACTION_ARGS[0]}" == "ssh-tunnel" ]]; then
+  shift_args=("${ACTION_ARGS[@]:1}")
+  exec docker compose --env-file "$ENV_FILE" up -d ssh-tunnel "${shift_args[@]}"
+fi
+
+if [[ "${ACTION_ARGS[0]}" == "down" || "${ACTION_ARGS[0]}" == "tunnel-down" ]]; then
+  shift_args=("${ACTION_ARGS[@]:1}")
+  exec docker compose --env-file "$ENV_FILE" down "${shift_args[@]}"
+fi
+
+# Run db container for all other actions
+exec docker compose --env-file "$ENV_FILE" run --rm db "${ACTION_ARGS[@]}"
